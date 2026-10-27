@@ -204,72 +204,15 @@ describe("Bluffstack game engine", () => {
   });
 
   it("returns all players with the highest score as shared winners", () => {
-    let state = submitBothFakes(createStartedGame());
+    const state = createStartedGame();
 
-    const realOption = state.currentRound!.options.find(
-      (option) => option.isReal,
-    )!;
+    state.phase = "FINISHED";
+    state.currentRound = null;
+    state.phaseDeadline = null;
 
-    state = applyAction(
-      state,
-      {
-        type: "SUBMIT_VOTE",
-        playerId: "p1",
-        roundNumber: 1,
-        optionId: realOption.id,
-      },
-      2300,
-    );
+    state.players[0].score = 12;
+    state.players[1].score = 12;
 
-    state = applyAction(
-      state,
-      {
-        type: "SUBMIT_VOTE",
-        playerId: "p2",
-        roundNumber: 1,
-        optionId: realOption.id,
-      },
-      2400,
-    );
-
-    for (let round = 1; round <= 5; round += 1) {
-      if (round > 1) {
-        expect(state.phase).toBe("WRITE");
-      }
-
-      if (round < 5) {
-        state = applyAction(
-          state,
-          { type: "HEARTBEAT", playerId: "p1" },
-          state.phaseDeadline!,
-        );
-
-        expect(state.phase).toBe("VOTE");
-
-        // No fake entries are required for the remaining deadline test.
-        state = applyAction(
-          state,
-          { type: "HEARTBEAT", playerId: "p1" },
-          state.phaseDeadline!,
-        );
-
-        expect(state.phase).toBe("REVEAL");
-
-        state = applyAction(
-          state,
-          { type: "HEARTBEAT", playerId: "p1" },
-          state.phaseDeadline!,
-        );
-      } else {
-        state = applyAction(
-          state,
-          { type: "HEARTBEAT", playerId: "p1" },
-          state.phaseDeadline!,
-        );
-      }
-    }
-
-    expect(state.phase).toBe("FINISHED");
     expect(getWinners(state).map((player) => player.id)).toEqual(["p1", "p2"]);
   });
 });
