@@ -15,6 +15,7 @@ const VOTE_MS = 30_000;
 const REVEAL_MS = 10_000;
 const MAX_PLAYERS = 8;
 const MAX_ROUNDS = 5;
+const HEARTBEAT_TIMEOUT_MS = 15_000;
 
 function cloneState(state: GameState): GameState {
   return structuredClone(state);
@@ -313,6 +314,39 @@ function advanceDeadline(state: GameState, now: number): void {
         return;
     }
   }
+}
+
+/**
+ * Advances expired game phases without requiring a player action.
+ *
+ * Callers can persist the returned state before processing a new
+ * player action. Repeated calls with the same old timestamp are safe.
+ */
+export function advanceGameState(current: GameState, now: number): GameState {
+  if (!Number.isFinite(now)) {
+    throw new GameRuleError("Invalid server timestamp.");
+  }
+
+  const state = cloneState(current);
+
+  const previousPhase = current.phase;
+  const previousRoundNumber = current.roundNumber;
+  const previousDeadline = current.phaseDeadline;
+  const previousHistoryLength = current.history.length;
+
+  advanceDeadline(state, now);
+
+  const changed =
+    state.phase !== previousPhase ||
+    state.roundNumber !== previousRoundNumber ||
+    state.phaseDeadline !== previousDeadline ||
+    state.history.length !== previousHistoryLength;
+
+  if (changed) {
+    state.version = current.version + 1;
+  }
+
+  return state;
 }
 
 function electHost(state: GameState): void {
