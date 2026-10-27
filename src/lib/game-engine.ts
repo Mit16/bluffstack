@@ -317,10 +317,8 @@ function advanceDeadline(state: GameState, now: number): void {
 }
 
 /**
- * Advances expired game phases without requiring a player action.
- *
- * Callers can persist the returned state before processing a new
- * player action. Repeated calls with the same old timestamp are safe.
+ * Advances expired phases and marks players inactive when their
+ * heartbeat is older than the allowed timeout.
  */
 export function advanceGameState(current: GameState, now: number): GameState {
   if (!Number.isFinite(now)) {
@@ -328,19 +326,45 @@ export function advanceGameState(current: GameState, now: number): GameState {
   }
 
   const state = cloneState(current);
+  let changed = false;
 
-  const previousPhase = current.phase;
-  const previousRoundNumber = current.roundNumber;
-  const previousDeadline = current.phaseDeadline;
-  const previousHistoryLength = current.history.length;
+  // Expire players only when they have been unseen for MORE than 15 seconds.
+  for (const player of state.players) {
+    if (player.active && now - player.lastSeen > HEARTBEAT_TIMEOUT_MS) {
+      player.active = false;
+      changed = true;
+    }
+  }
+
+  // Transfer host ownership if the current host is no longer active.
+  const currentHost = state.players.find(
+    (player) => player.id === state.hostPlayerId,
+  );
+
+  if (currentHost && !currentHost.active) {
+    const previousHostId = state.hostPlayerId;
+    electHost(state);
+
+    if (state.hostPlayerId !== previousHostId) {
+      changed = true;
+    }
+  }
+
+  const previousPhase = state.phase;
+  const previousRoundNumber = state.roundNumber;
+  const previousDeadline = state.phaseDeadline;
+  const previousHistoryLength = state.history.length;
 
   advanceDeadline(state, now);
 
-  const changed =
+  if (
     state.phase !== previousPhase ||
     state.roundNumber !== previousRoundNumber ||
     state.phaseDeadline !== previousDeadline ||
-    state.history.length !== previousHistoryLength;
+    state.history.length !== previousHistoryLength
+  ) {
+    changed = true;
+  }
 
   if (changed) {
     state.version = current.version + 1;
