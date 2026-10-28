@@ -3,8 +3,14 @@ import {
   applyAction,
   createRoomState,
   getWinners,
+  advanceGameState,
 } from "../../src/lib/game-engine";
-import type { GameState, Player, TechTerm } from "../../src/types/game";
+import type {
+  GameState,
+  Player,
+  TechTerm,
+  VoteOption,
+} from "../../src/types/game";
 
 const terms: TechTerm[] = Array.from({ length: 5 }, (_, index) => ({
   id: `term-${index + 1}`,
@@ -107,6 +113,231 @@ describe("Bluffstack game engine", () => {
     expect(submitted.currentRound?.submissions.p2).toBeUndefined();
     expect(submitted).toEqual(stateBeforeRetry);
     expect(started.currentRound?.submissions).toEqual({});
+  });
+
+  it("uses the injected option order when a player timeout starts voting", () => {
+    let state = createStartedGame();
+
+    state = applyAction(state, { type: "HEARTBEAT", playerId: "p1" }, 5_000);
+
+    state = applyAction(
+      state,
+      {
+        type: "SUBMIT_FAKE",
+        playerId: "p1",
+        roundNumber: 1,
+        text: "A distributed compiler protocol that coordinates independent execution nodes.",
+      },
+      5_100,
+    );
+
+    // Keep p1 active while p2 times out.
+    state = applyAction(state, { type: "HEARTBEAT", playerId: "p1" }, 20_900);
+
+    let orderCalls = 0;
+
+    const reverseOptions = (options: VoteOption[]): VoteOption[] => {
+      orderCalls += 1;
+      return [...options].reverse();
+    };
+
+    const nextState = advanceGameState(state, 21_000, reverseOptions);
+
+    expect(nextState.phase).toBe("VOTE");
+    expect(orderCalls).toBe(1);
+    expect(nextState.players.find((player) => player.id === "p2")?.active).toBe(
+      false,
+    );
+    expect(nextState.currentRound!.options.map((option) => option.id)).toEqual([
+      "fake-1-1",
+      "real-1",
+    ]);
+  });
+
+  it("uses the injected option order when a player leaves during WRITE", () => {
+    let state = createStartedGame();
+
+    state = applyAction(
+      state,
+      {
+        type: "SUBMIT_FAKE",
+        playerId: "p1",
+        roundNumber: 1,
+        text: "A distributed compiler protocol that coordinates independent execution nodes.",
+      },
+      2_100,
+    );
+
+    let orderCalls = 0;
+
+    const reverseOptions = (options: VoteOption[]): VoteOption[] => {
+      orderCalls += 1;
+      return [...options].reverse();
+    };
+
+    const nextState = applyAction(
+      state,
+      { type: "LEAVE", playerId: "p2" },
+      2_200,
+      reverseOptions,
+    );
+
+    expect(nextState.phase).toBe("VOTE");
+    expect(orderCalls).toBe(1);
+    expect(nextState.currentRound!.options.map((option) => option.id)).toEqual([
+      "fake-1-1",
+      "real-1",
+    ]);
+  });
+
+  it("uses the injected option order when WRITE expires", () => {
+    let state = createStartedGame();
+
+    state = applyAction(
+      state,
+      {
+        type: "SUBMIT_FAKE",
+        playerId: "p1",
+        roundNumber: 1,
+        text: "A distributed compiler protocol that coordinates independent execution nodes.",
+      },
+      2_100,
+    );
+
+    // Keep both players active until the WRITE deadline.
+    state = applyAction(state, { type: "HEARTBEAT", playerId: "p1" }, 45_990);
+    state = applyAction(state, { type: "HEARTBEAT", playerId: "p2" }, 45_990);
+
+    let orderCalls = 0;
+
+    const reverseOptions = (options: VoteOption[]): VoteOption[] => {
+      orderCalls += 1;
+      return [...options].reverse();
+    };
+
+    const votingState = advanceGameState(state, 47_000, reverseOptions);
+
+    expect(votingState.phase).toBe("VOTE");
+    expect(orderCalls).toBe(1);
+    expect(
+      votingState.currentRound!.options.map((option) => option.id),
+    ).toEqual(["fake-1-1", "real-1"]);
+  });
+
+  it("uses the injected option order exactly once per round", () => {
+    const started = createStartedGame();
+
+    const afterFirstSubmission = applyAction(
+      started,
+      {
+        type: "SUBMIT_FAKE",
+        playerId: "p1",
+        roundNumber: 1,
+        text: "A distributed compiler protocol that coordinates independent execution nodes.",
+      },
+      2_100,
+    );
+
+    let shuffleCalls = 0;
+
+    const reverseOptions = (options: VoteOption[]): VoteOption[] => {
+      shuffleCalls += 1;
+      return [...options].reverse();
+    };
+
+    const votingState = applyAction(
+      afterFirstSubmission,
+      {
+        type: "SUBMIT_FAKE",
+        playerId: "p2",
+        roundNumber: 1,
+        text: "A memory allocation technique for asynchronously scheduled computation graphs.",
+      },
+      2_200,
+      reverseOptions,
+    );
+
+    expect(votingState.phase).toBe("VOTE");
+    expect(shuffleCalls).toBe(1);
+
+    const optionIds = votingState.currentRound!.options.map(
+      (option) => option.id,
+    );
+
+    expect(optionIds).toEqual(["fake-1-2", "fake-1-1", "real-1"]);
+    expect(new Set(optionIds).size).toBe(3);
+
+    const savedOrder = [...optionIds];
+
+    const afterHeartbeat = applyAction(
+      votingState,
+      { type: "HEARTBEAT", playerId: "p1" },
+      2_300,
+      reverseOptions,
+    );
+
+    expect(
+      afterHeartbeat.currentRound!.options.map((option) => option.id),
+    ).toEqual(savedOrder);
+    expect(shuffleCalls).toBe(1);
+  });
+
+  it("reactivates a timed-out player on heartbeat and rejoin", () => {
+    let state = createStartedGame();
+    state = applyAction(state, { type: "HEARTBEAT", playerId: "p1" }, 5_000);
+
+    // p2 has been silent since 1001, so they expire at 20_000.
+    const expired = advanceGameState(state, 20_000);
+    expect(expired.players.find((p) => p.id === "p2")?.active).toBe(false);
+    expect(expired.players.find((p) => p.id === "p1")?.active).toBe(true);
+    expect(expired.hostPlayerId).toBe("p1");
+
+    // A returning heartbeat reactivates the known player.
+    const back = applyAction(
+      expired,
+      { type: "HEARTBEAT", playerId: "p2" },
+      21_000,
+    );
+    expect(back.players.find((p) => p.id === "p2")?.active).toBe(true);
+    expect(back.players.find((p) => p.id === "p2")?.lastSeen).toBe(21_000);
+    expect(back.players).toHaveLength(2);
+
+    // A refresh-style JOIN with the same ID rejoins instead of throwing.
+    const expiredAgain = advanceGameState(back, 40_000);
+    const rejoined = applyAction(
+      expiredAgain,
+      { type: "JOIN", player: guest },
+      41_000,
+    );
+    expect(rejoined.players).toHaveLength(2);
+    expect(rejoined.players.find((p) => p.id === "p2")?.active).toBe(true);
+  });
+
+  it("advances WRITE early when a non-submitter times out", () => {
+    let state = createStartedGame();
+    state = applyAction(state, { type: "HEARTBEAT", playerId: "p1" }, 5_000);
+    state = applyAction(
+      state,
+      {
+        type: "SUBMIT_FAKE",
+        playerId: "p1",
+        roundNumber: 1,
+        text: "A distributed compiler protocol that coordinates independent execution nodes.",
+      },
+      5_100,
+    );
+    expect(state.phase).toBe("WRITE");
+
+    // Keep p1 fresh, let p2 (silent since 1001) expire; the phase must not
+    // wait for the 47s WRITE deadline.
+    state = applyAction(state, { type: "HEARTBEAT", playerId: "p1" }, 20_900);
+    const advanced = advanceGameState(state, 21_000);
+
+    expect(advanced.phase).toBe("VOTE");
+    expect(advanced.phaseDeadline).toBe(51_000);
+    expect(advanced.players.find((p) => p.id === "p2")?.active).toBe(false);
+    expect(advanced.currentRound?.options).toHaveLength(2);
+    expect(advanced.hostPlayerId).toBe("p1");
   });
 
   it("rejects a near-identical fake submitted by another player", () => {

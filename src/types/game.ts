@@ -32,7 +32,7 @@ export interface RoundState {
 }
 
 export interface RoundResult {
-  roundNumber: Number;
+  roundNumber: number;
   term: string;
   realDefinition: string;
   options: VoteOption[];

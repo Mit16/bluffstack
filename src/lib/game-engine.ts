@@ -17,6 +17,15 @@ const MAX_PLAYERS = 8;
 const MAX_ROUNDS = 5;
 const HEARTBEAT_TIMEOUT_MS = 15_000;
 
+/**
+ * Injectable ordering of vote options. Tests can pass a deterministic
+ * stub; production uses the seeded stable order by default.
+ */
+export type OrderOptions = (
+  options: VoteOption[],
+  seed: string,
+) => VoteOption[];
+
 function cloneState(state: GameState): GameState {
   return structuredClone(state);
 }
@@ -121,20 +130,15 @@ function validateFake(
     );
   }
 
-  // console.log({
-  //   clean: normalize(clean),
-  //   existing: existingFakes.map(normalize),
-  //   similarities: existingFakes.map((fake) => similarity(clean, fake)),
-  // });
-
   if (
     existingFakes.some(
       (fake) =>
         normalize(clean) === normalize(fake) || similarity(clean, fake) >= 0.85,
     )
   ) {
+    // Generic message: does not reveal that another player caused it.
     throw new GameRuleError(
-      "Your definition is too similar to another player's fake. Rewrite it.",
+      "Your definition is too similar. Please rewrite it.",
     );
   }
 
@@ -161,6 +165,9 @@ function stableOrder(options: VoteOption[], seed: string): VoteOption[] {
       a.id.localeCompare(b.id),
   );
 }
+
+const defaultOrder: OrderOptions = (options, seed) =>
+  stableOrder(options, seed);
 
 export function createRoomState(input: CreateRoomInput): GameState {
   if (!/^[A-Z0-9]{4}$/.test(input.roomCode)) {
@@ -221,23 +228,27 @@ function beginRound(state: GameState, roundNumber: number, now: number): void {
   };
 }
 
-function enterVote(state: GameState, now: number): void {
+function enterVote(
+  state: GameState,
+  now: number,
+  order: OrderOptions = defaultOrder,
+): void {
   const round = state.currentRound;
 
   if (!round) {
     throw new GameRuleError("Cannot vote without an active round.");
   }
 
-  const fakeOptions: VoteOption[] = Object.entries(round.submissions)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, text], index) => ({
-      id: `fake-${state.roundNumber}-${index + 1}`,
-      text,
-      authorPlayerId: Object.keys(round.submissions).sort((a, b) =>
-        a.localeCompare(b),
-      )[index],
-      isReal: false,
-    }));
+  const sortedAuthors = Object.keys(round.submissions).sort((a, b) =>
+    a.localeCompare(b),
+  );
+
+  const fakeOptions: VoteOption[] = sortedAuthors.map((authorId, index) => ({
+    id: `fake-${state.roundNumber}-${index + 1}`,
+    text: round.submissions[authorId],
+    authorPlayerId: authorId,
+    isReal: false,
+  }));
 
   const options: VoteOption[] = [
     {
@@ -249,10 +260,7 @@ function enterVote(state: GameState, now: number): void {
     ...fakeOptions,
   ];
 
-  round.options = stableOrder(
-    options,
-    `${state.roomCode}:${state.roundNumber}`,
-  );
+  round.options = order(options, `${state.roomCode}:${state.roundNumber}`);
 
   round.votes = {};
   state.phase = "VOTE";
@@ -333,7 +341,11 @@ function allActivePlayersVoted(state: GameState): boolean {
   );
 }
 
-function advanceDeadline(state: GameState, now: number): void {
+function advanceDeadline(
+  state: GameState,
+  now: number,
+  order: OrderOptions = defaultOrder,
+): void {
   // Bounded loop also handles requests arriving after multiple deadlines.
   for (let i = 0; i < MAX_ROUNDS * 3 + 3; i += 1) {
     if (
@@ -349,7 +361,7 @@ function advanceDeadline(state: GameState, now: number): void {
 
     switch (state.phase) {
       case "WRITE":
-        enterVote(state, deadline);
+        enterVote(state, deadline, order);
         break;
 
       case "VOTE":
@@ -376,7 +388,11 @@ function advanceDeadline(state: GameState, now: number): void {
  * Advances expired phases and marks players inactive when their
  * heartbeat is older than the allowed timeout.
  */
-export function advanceGameState(current: GameState, now: number): GameState {
+export function advanceGameState(
+  current: GameState,
+  now: number,
+  order: OrderOptions = defaultOrder,
+): GameState {
   if (!Number.isFinite(now)) {
     throw new GameRuleError("Invalid server timestamp.");
   }
@@ -406,12 +422,20 @@ export function advanceGameState(current: GameState, now: number): GameState {
     }
   }
 
+  // A timed-out player may have been the only one holding a phase open;
+  // advance early instead of waiting out the full deadline.
+  if (state.phase === "WRITE" && allActivePlayersSubmitted(state)) {
+    enterVote(state, now, order);
+  } else if (state.phase === "VOTE" && allActivePlayersVoted(state)) {
+    enterReveal(state, now);
+  }
+
   const previousPhase = state.phase;
   const previousRoundNumber = state.roundNumber;
   const previousDeadline = state.phaseDeadline;
   const previousHistoryLength = state.history.length;
 
-  advanceDeadline(state, now);
+  advanceDeadline(state, now, order);
 
   if (
     state.phase !== previousPhase ||
@@ -443,6 +467,7 @@ export function applyAction(
   current: GameState,
   action: GameAction,
   now: number,
+  order: OrderOptions = defaultOrder,
 ): GameState {
   if (!Number.isFinite(now)) {
     throw new GameRuleError("Invalid server timestamp.");
@@ -451,24 +476,30 @@ export function applyAction(
   // Work on a copy: failed actions never mutate the caller's state.
   const state = cloneState(current);
 
-  advanceDeadline(state, now);
+  advanceDeadline(state, now, order);
 
   switch (action.type) {
     case "JOIN": {
+      if (!action.player.id.trim() || !action.player.name.trim()) {
+        throw new GameRuleError("Player ID and name are required.");
+      }
+
+      // Rejoin after a disconnect/refresh: reactivate in place, in any phase.
+      const existing = state.players.find((p) => p.id === action.player.id);
+
+      if (existing) {
+        existing.active = true;
+        existing.name = action.player.name.trim();
+        existing.lastSeen = now;
+        break;
+      }
+
       if (state.phase !== "LOBBY" && state.phase !== "FINISHED") {
         throw new GameRuleError("Game in progress. Joining is disabled.");
       }
 
-      if (state.players.some((p) => p.id === action.player.id)) {
-        throw new GameRuleError("This player ID already exists.");
-      }
-
       if (activePlayers(state).length >= MAX_PLAYERS) {
         throw new GameRuleError("Room is full.");
-      }
-
-      if (!action.player.id.trim() || !action.player.name.trim()) {
-        throw new GameRuleError("Player ID and name are required.");
       }
 
       state.players.push({
@@ -479,22 +510,20 @@ export function applyAction(
         score: 0,
       });
 
-      if (state.phase === "FINISHED") {
-        state.phase = "LOBBY";
-        state.phaseDeadline = null;
-        state.currentRound = null;
-        state.roundNumber = 0;
-        state.history = [];
-        for (const player of state.players) {
-          player.score = 0;
-        }
-      }
+      // Joining a FINISHED room no longer resets it: PLAY_AGAIN owns that.
 
       break;
     }
 
     case "HEARTBEAT": {
-      const player = requirePlayer(state, action.playerId);
+      // A timed-out player can come back; reactivation is allowed here.
+      const player = state.players.find((item) => item.id === action.playerId);
+
+      if (!player) {
+        throw new GameRuleError("Player is not in this room.");
+      }
+
+      player.active = true;
       player.lastSeen = now;
       break;
     }
@@ -508,7 +537,7 @@ export function applyAction(
       }
 
       if (state.phase === "WRITE" && allActivePlayersSubmitted(state)) {
-        enterVote(state, now);
+        enterVote(state, now, order);
       } else if (state.phase === "VOTE" && allActivePlayersVoted(state)) {
         enterReveal(state, now);
       }
@@ -564,7 +593,7 @@ export function applyAction(
       );
 
       if (allActivePlayersSubmitted(state)) {
-        enterVote(state, now);
+        enterVote(state, now, order);
       }
 
       break;
@@ -616,9 +645,9 @@ export function applyAction(
 
       if (state.phase === "WRITE") {
         if (allActivePlayersSubmitted(state)) {
-          enterVote(state, now);
+          enterVote(state, now, order);
         } else if (state.phaseDeadline !== null && now >= state.phaseDeadline) {
-          enterVote(state, state.phaseDeadline);
+          enterVote(state, state.phaseDeadline, order);
         } else {
           throw new GameRuleError("The WRITE phase is not ready to advance.");
         }
