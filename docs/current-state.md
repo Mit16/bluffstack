@@ -10,9 +10,9 @@ _Last updated: 2026-10-28 - Commit: 4905d70_
 |---|---|
 | 1 - Project setup | Complete |
 | 2 - Pure game engine | Complete |
-| 3A - Submission integrity | Next |
-| 3B - Fake-answer similarity (inter-fake) | Pending |
-| 3C - Voting-option shuffle | Pending |
+| 3A - Submission integrity | Complete |
+| 3B - Fake-answer similarity (inter-fake) | Complete |
+| 3C - Voting-option shuffle | Next |
 | 3D - Lifecycle and deadline edge cases | Pending |
 | 3E - Final engine verification | Pending |
 | 4 - Supabase schema and persistence layer | Not started |

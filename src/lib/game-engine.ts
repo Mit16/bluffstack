@@ -50,21 +50,60 @@ function normalize(text: string): string {
     .trim();
 }
 
-function similarity(a: string, b: string): number {
-  const left = new Set(normalize(a).split(/\s+/).filter(Boolean));
-  const right = new Set(normalize(b).split(/\s+/).filter(Boolean));
+function bigrams(text: string): Map<string, number> {
+  const counts = new Map<string, number>();
 
-  if (left.size === 0 || right.size === 0) {
+  for (let i = 0; i < text.length - 1; i += 1) {
+    const gram = text.slice(i, i + 2);
+    counts.set(gram, (counts.get(gram) ?? 0) + 1);
+  }
+
+  return counts;
+}
+
+function diceSimilarity(a: string, b: string): number {
+  if (a.length < 2 || b.length < 2) {
     return 0;
   }
 
-  const intersection = [...left].filter((word) => right.has(word)).length;
-  const union = new Set([...left, ...right]).size;
+  const left = bigrams(a);
+  const right = bigrams(b);
+  let matches = 0;
 
-  return intersection / union;
+  for (const [gram, count] of left) {
+    matches += Math.min(count, right.get(gram) ?? 0);
+  }
+
+  return (2 * matches) / (a.length - 1 + b.length - 1);
 }
 
-function validateFake(text: string, realDefinition: string): string {
+function similarity(a: string, b: string): number {
+  const left = normalize(a);
+  const right = normalize(b);
+
+  if (!left || !right) {
+    return 0;
+  }
+
+  // Word-level Jaccard catches reworded copies with repeated vocabulary.
+  const leftWords = new Set(left.split(/\s+/).filter(Boolean));
+  const rightWords = new Set(right.split(/\s+/).filter(Boolean));
+  const wordScore =
+    [...leftWords].filter((word) => rightWords.has(word)).length /
+    new Set([...leftWords, ...rightWords]).size;
+
+  // Character-level Dice catches near-identical text with small edits
+  // (typos, singular/plural) that change every affected token.
+  const charScore = diceSimilarity(left, right);
+
+  return Math.max(wordScore, charScore);
+}
+
+function validateFake(
+  text: string,
+  realDefinition: string,
+  existingFakes: string[] = [],
+): string {
   const clean = text.trim();
 
   if (clean.length < 20 || clean.length > 500) {
@@ -79,6 +118,23 @@ function validateFake(text: string, realDefinition: string): string {
   ) {
     throw new GameRuleError(
       "Your definition is too similar to the real one. Rewrite it.",
+    );
+  }
+
+  // console.log({
+  //   clean: normalize(clean),
+  //   existing: existingFakes.map(normalize),
+  //   similarities: existingFakes.map((fake) => similarity(clean, fake)),
+  // });
+
+  if (
+    existingFakes.some(
+      (fake) =>
+        normalize(clean) === normalize(fake) || similarity(clean, fake) >= 0.85,
+    )
+  ) {
+    throw new GameRuleError(
+      "Your definition is too similar to another player's fake. Rewrite it.",
     );
   }
 
@@ -502,6 +558,9 @@ export function applyAction(
       round.submissions[action.playerId] = validateFake(
         action.text,
         round.term.definition,
+        Object.entries(round.submissions)
+          .filter(([playerId]) => playerId !== action.playerId)
+          .map(([, text]) => text),
       );
 
       if (allActivePlayersSubmitted(state)) {

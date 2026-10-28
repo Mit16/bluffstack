@@ -72,6 +72,74 @@ function submitBothFakes(state: GameState): GameState {
 }
 
 describe("Bluffstack game engine", () => {
+  it("rejects an identical fake submitted by another player", () => {
+    const started = createStartedGame();
+    const firstFake =
+      "A distributed compiler protocol that coordinates independent execution nodes.";
+
+    const submitted = applyAction(
+      started,
+      {
+        type: "SUBMIT_FAKE",
+        playerId: "p1",
+        roundNumber: 1,
+        text: firstFake,
+      },
+      2_100,
+    );
+
+    const stateBeforeRetry = structuredClone(submitted);
+
+    expect(() =>
+      applyAction(
+        submitted,
+        {
+          type: "SUBMIT_FAKE",
+          playerId: "p2",
+          roundNumber: 1,
+          text: firstFake,
+        },
+        2_200,
+      ),
+    ).toThrow(/too similar|duplicate/i);
+
+    expect(submitted.currentRound?.submissions.p1).toBe(firstFake);
+    expect(submitted.currentRound?.submissions.p2).toBeUndefined();
+    expect(submitted).toEqual(stateBeforeRetry);
+    expect(started.currentRound?.submissions).toEqual({});
+  });
+
+  it("rejects a near-identical fake submitted by another player", () => {
+    const started = createStartedGame();
+
+    const originalFake =
+      "A distributed compiler protocol coordinates independent execution nodes.";
+
+    const submitted = applyAction(
+      started,
+      {
+        type: "SUBMIT_FAKE",
+        playerId: "p1",
+        roundNumber: 1,
+        text: originalFake,
+      },
+      2_100,
+    );
+
+    expect(() =>
+      applyAction(
+        submitted,
+        {
+          type: "SUBMIT_FAKE",
+          playerId: "p2",
+          roundNumber: 1,
+          text: "A distributed compiler protocol coordinates independent execution node.",
+        },
+        2_200,
+      ),
+    ).toThrow(/too similar|duplicate/i);
+  });
+
   it("creates a lobby and requires two players to start", () => {
     const state = createRoomState({
       roomCode: "ABCD",
@@ -187,6 +255,26 @@ describe("Bluffstack game engine", () => {
     expect(state.players.find((p) => p.id === "p1")?.score).toBe(5);
     expect(state.players.find((p) => p.id === "p2")?.score).toBe(0);
     expect(state.history).toHaveLength(1);
+  });
+
+  it("rejects a player's attempt to vote for their own fake", () => {
+    const state = submitBothFakes(createStartedGame());
+    const ownFake = state.currentRound!.options.find(
+      (option) => option.authorPlayerId === "p1",
+    )!;
+
+    expect(() =>
+      applyAction(
+        state,
+        {
+          type: "SUBMIT_VOTE",
+          playerId: "p1",
+          roundNumber: 1,
+          optionId: ownFake.id,
+        },
+        2300,
+      ),
+    ).toThrow(/own fake/i);
   });
 
   it("rejects duplicate votes", () => {
