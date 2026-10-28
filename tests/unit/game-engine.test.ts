@@ -99,24 +99,55 @@ describe("Bluffstack game engine", () => {
     expect(state.currentRound?.options).toHaveLength(3);
   });
 
-  it("rejects a player's attempt to vote for their own fake", () => {
-    const state = submitBothFakes(createStartedGame());
-    const ownFake = state.currentRound!.options.find(
-      (option) => option.authorPlayerId === "p1",
-    )!;
+  it("rejects a second fake submission from the same player", () => {
+    const started = createStartedGame();
+    const originalFake =
+      "A distributed compiler protocol that coordinates independent execution nodes.";
+
+    const submitted = applyAction(
+      started,
+      {
+        type: "SUBMIT_FAKE",
+        playerId: "p1",
+        roundNumber: 1,
+        text: originalFake,
+      },
+      2_100,
+    );
+
+    const stateBeforeRetry = structuredClone(submitted);
 
     expect(() =>
       applyAction(
-        state,
+        submitted,
         {
-          type: "SUBMIT_VOTE",
+          type: "SUBMIT_FAKE",
           playerId: "p1",
           roundNumber: 1,
-          optionId: ownFake.id,
+          text: "A different scheduling protocol for distributed software execution.",
         },
-        2300,
+        2_200,
       ),
-    ).toThrow(/own fake/i);
+    ).toThrow(/already submitted/i);
+
+    // A rejected retry must not overwrite the original submission.
+    expect(submitted.currentRound?.submissions.p1).toBe(originalFake);
+
+    // Neither the first state nor the submitted state may be mutated.
+    expect(started.currentRound?.submissions).toEqual({});
+    expect(submitted).toEqual(stateBeforeRetry);
+  });
+
+  it("allows different players to submit their own fakes", () => {
+    const state = submitBothFakes(createStartedGame());
+
+    expect(state.phase).toBe("VOTE");
+    expect(state.currentRound?.submissions.p1).toBe(
+      "A distributed compiler protocol that coordinates independent execution nodes.",
+    );
+    expect(state.currentRound?.submissions.p2).toBe(
+      "A memory allocation technique for asynchronously scheduled computation graphs.",
+    );
   });
 
   it("scores correct guesses and successful fakes exactly once", () => {

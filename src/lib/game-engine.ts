@@ -495,6 +495,10 @@ export function applyAction(
         throw new GameRuleError("No active round.");
       }
 
+      if (action.playerId in round.submissions) {
+        throw new GameRuleError("You have already submitted this round.");
+      }
+
       round.submissions[action.playerId] = validateFake(
         action.text,
         round.term.definition,
