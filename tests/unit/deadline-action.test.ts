@@ -102,4 +102,44 @@ describe("deadline-boundary actions", () => {
     expect(votingState).toEqual(beforeAdvance);
     expect(votingState.phase).toBe("VOTE");
   });
+
+  it("increments the version when a heartbeat advances an expired deadline", () => {
+    const state = createStartedGame();
+    const deadline = state.phaseDeadline!;
+
+    const advanced = applyAction(
+      state,
+      { type: "HEARTBEAT", playerId: "host" },
+      deadline,
+    );
+
+    expect(advanced.phase).toBe("VOTE");
+    expect(advanced.version).toBe(state.version + 1);
+    expect(advanced.phaseDeadline).toBe(deadline + 30_000);
+
+    // The original state must remain unchanged.
+    expect(state.phase).toBe("WRITE");
+    expect(state.version).not.toBe(advanced.version);
+  });
+
+  it("does not increment the version for a heartbeat after the deadline was already advanced", () => {
+    const state = createStartedGame();
+    const deadline = state.phaseDeadline!;
+
+    const advanced = applyAction(
+      state,
+      { type: "HEARTBEAT", playerId: "host" },
+      deadline,
+    );
+
+    const heartbeat = applyAction(
+      advanced,
+      { type: "HEARTBEAT", playerId: "host" },
+      deadline + 1,
+    );
+
+    expect(heartbeat.phase).toBe("VOTE");
+    expect(heartbeat.version).toBe(advanced.version);
+    expect(heartbeat.phaseDeadline).toBe(advanced.phaseDeadline);
+  });
 });
