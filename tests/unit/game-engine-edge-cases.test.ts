@@ -70,6 +70,23 @@ describe("game engine edge cases", () => {
     expect(state.hostPlayerId).toBe("player-2");
   });
 
+  it("clears host ownership when the last active player leaves", () => {
+    const state = makeRoom();
+
+    const nextState = applyAction(
+      state,
+      { type: "LEAVE", playerId: "host" },
+      1_300,
+    );
+
+    expect(nextState.players.every((player) => !player.active)).toBe(true);
+    expect(nextState.hostPlayerId).toBeNull();
+
+    // The original state must remain unchanged.
+    expect(state.hostPlayerId).toBe("host");
+    expect(state.players[0]?.active).toBe(true);
+  });
+
   it("advances WRITE to VOTE when a valid request arrives at the deadline", () => {
     let state = makeRoom();
     state = joinPlayer(state, "player-2", 1_100);

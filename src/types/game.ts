@@ -44,7 +44,7 @@ export interface GameState {
   roomCode: string;
   version: number;
   phase: GamePhase;
-  hostPlayerId: string;
+  hostPlayerId: string | null;
   players: Player[];
   terms: TechTerm[];
   roundNumber: number;

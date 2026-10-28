@@ -86,6 +86,38 @@ describe("player activity", () => {
     expect(advanced.hostPlayerId).toBe("guest");
   });
 
+  it("clears host ownership when the last active player times out", () => {
+    const terms = Array.from({ length: 5 }, (_, index) => ({
+      id: `term-${index + 1}`,
+      term: `Technology ${index + 1}`,
+      definition: `A specialized mechanism for coordinating distributed software components and internal processing workflows, number ${index + 1}.`,
+      sourceUrl: `https://example.com/terms/${index + 1}`,
+    }));
+
+    const state = createRoomState({
+      roomCode: "TEST",
+      host: {
+        id: "host",
+        name: "Host",
+        joinedAt: 1_000,
+        lastSeen: 1_000,
+        active: true,
+        score: 0,
+      },
+      terms,
+      now: 1_000,
+    });
+
+    const nextState = advanceGameState(state, 16_001);
+
+    expect(nextState.players[0]?.active).toBe(false);
+    expect(nextState.hostPlayerId).toBeNull();
+
+    // Advancing state must not mutate the original.
+    expect(state.players[0]?.active).toBe(true);
+    expect(state.hostPlayerId).toBe("host");
+  });
+
   it("does not allow an inactive player to submit a fake definition", () => {
     let state = createLobby();
 

@@ -458,9 +458,7 @@ function electHost(state: GameState): void {
     (a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id),
   )[0];
 
-  if (nextHost) {
-    state.hostPlayerId = nextHost.id;
-  }
+  state.hostPlayerId = nextHost?.id ?? null;
 }
 
 export function applyAction(

@@ -38,7 +38,7 @@ export interface PlayerGameView {
   roomCode: string;
   version: number;
   phase: GamePhase;
-  hostPlayerId: string;
+  hostPlayerId: string | null;
   viewerPlayerId: string;
   players: GameViewPlayer[];
   roundNumber: number;
