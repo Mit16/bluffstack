@@ -523,6 +523,12 @@ export function applyAction(
 
       player.active = true;
       player.lastSeen = now;
+
+      // Restore host ownership only when the room currently has no host.
+      if (state.hostPlayerId === null) {
+        electHost(state);
+      }
+
       break;
     }
 

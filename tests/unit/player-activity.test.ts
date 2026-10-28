@@ -118,6 +118,29 @@ describe("player activity", () => {
     expect(state.hostPlayerId).toBe("host");
   });
 
+  it("assigns a host when a player returns to a room with no host", () => {
+    const state = createRoomState({
+      roomCode: "TEST",
+      host: player("host"),
+      terms,
+      now: 1_000,
+    });
+
+    const timedOut = advanceGameState(state, 16_001);
+
+    expect(timedOut.hostPlayerId).toBeNull();
+    const reconnected = applyAction(
+      timedOut,
+      { type: "HEARTBEAT", playerId: "host" },
+      17_000,
+    );
+
+    expect(
+      reconnected.players.find((player) => player.id === "host")?.active,
+    ).toBe(true);
+    expect(reconnected.hostPlayerId).toBe("host");
+  });
+
   it("does not allow an inactive player to submit a fake definition", () => {
     let state = createLobby();
 
