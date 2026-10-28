@@ -118,6 +118,54 @@ describe("player activity", () => {
     expect(state.hostPlayerId).toBe("host");
   });
 
+  it("does not replace an existing host when another player reconnects", () => {
+    let state = createLobby();
+
+    // Time out the original host while keeping the guest active.
+    state = applyAction(
+      state,
+      { type: "HEARTBEAT", playerId: "guest" },
+      15_000,
+    );
+    state = advanceGameState(state, 17_000);
+
+    expect(state.hostPlayerId).toBe("guest");
+
+    // The original host returns.
+    const reconnected = applyAction(
+      state,
+      { type: "HEARTBEAT", playerId: "host" },
+      17_001,
+    );
+
+    expect(reconnected.hostPlayerId).toBe("guest");
+    expect(
+      reconnected.players.find((player) => player.id === "host")?.active,
+    ).toBe(true);
+  });
+
+  it("increments the version when a heartbeat restores host ownership", () => {
+    const state = createRoomState({
+      roomCode: "TEST",
+      host: player("host", 1_000),
+      terms,
+      now: 1_000,
+    });
+
+    const timedOut = advanceGameState(state, 16_001);
+
+    expect(timedOut.hostPlayerId).toBeNull();
+
+    const reconnected = applyAction(
+      timedOut,
+      { type: "HEARTBEAT", playerId: "host" },
+      17_000,
+    );
+
+    expect(reconnected.hostPlayerId).toBe("host");
+    expect(reconnected.version).toBe(timedOut.version + 1);
+  });
+
   it("assigns a host when a player returns to a room with no host", () => {
     const state = createRoomState({
       roomCode: "TEST",
