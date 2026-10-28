@@ -86,6 +86,28 @@ describe("player activity", () => {
     expect(advanced.hostPlayerId).toBe("guest");
   });
 
+  it("increments the version once when host timeout transfers ownership", () => {
+    let state = createLobby();
+
+    // Keep the guest active while the original host times out.
+    state = applyAction(
+      state,
+      { type: "HEARTBEAT", playerId: "guest" },
+      15_000,
+    );
+
+    const advanced = advanceGameState(state, 17_000);
+
+    expect(advanced.players.find((item) => item.id === "host")?.active).toBe(
+      false,
+    );
+    expect(advanced.players.find((item) => item.id === "guest")?.active).toBe(
+      true,
+    );
+    expect(advanced.hostPlayerId).toBe("guest");
+    expect(advanced.version).toBe(state.version + 1);
+  });
+
   it("clears host ownership when the last active player times out", () => {
     const terms = Array.from({ length: 5 }, (_, index) => ({
       id: `term-${index + 1}`,
