@@ -474,7 +474,18 @@ export function applyAction(
   // Work on a copy: failed actions never mutate the caller's state.
   const state = cloneState(current);
 
+  const previousPhase = state.phase;
+  const previousRoundNumber = state.roundNumber;
+  const previousDeadline = state.phaseDeadline;
+  const previousHistoryLength = state.history.length;
+
   advanceDeadline(state, now, order);
+
+  const deadlineChanged =
+    state.phase !== previousPhase ||
+    state.roundNumber !== previousRoundNumber ||
+    state.phaseDeadline !== previousDeadline ||
+    state.history.length !== previousHistoryLength;
 
   switch (action.type) {
     case "JOIN": {
@@ -521,6 +532,9 @@ export function applyAction(
         throw new GameRuleError("Player is not in this room.");
       }
 
+      const wasActive = player.active;
+      const previousHostId = state.hostPlayerId;
+
       player.active = true;
       player.lastSeen = now;
 
@@ -529,7 +543,15 @@ export function applyAction(
         electHost(state);
       }
 
-      break;
+      // Refreshing lastSeen alone is not a visible game-state change.
+      const heartbeatChanged =
+        !wasActive || state.hostPlayerId !== previousHostId;
+
+      if (deadlineChanged || heartbeatChanged) {
+        state.version = current.version + 1;
+      }
+
+      return state;
     }
 
     case "LEAVE": {

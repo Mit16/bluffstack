@@ -220,4 +220,44 @@ describe("player activity", () => {
       ),
     ).toThrow();
   });
+
+  it("does not increment the version when an active player's heartbeat only refreshes lastSeen", () => {
+    const state = createLobby();
+    const guestBefore = state.players.find((item) => item.id === "guest");
+
+    const heartbeat = applyAction(
+      state,
+      { type: "HEARTBEAT", playerId: "guest" },
+      1_200,
+    );
+
+    expect(
+      heartbeat.players.find((item) => item.id === "guest")?.lastSeen,
+    ).toBe(1_200);
+    expect(heartbeat.version).toBe(state.version);
+    expect(guestBefore?.active).toBe(true);
+    expect(heartbeat.hostPlayerId).toBe(state.hostPlayerId);
+  });
+
+  it("increments the version when a heartbeat reactivates an inactive player", () => {
+    let state = createLobby();
+
+    state = {
+      ...state,
+      players: state.players.map((item) =>
+        item.id === "guest" ? { ...item, active: false } : item,
+      ),
+    };
+
+    const reconnected = applyAction(
+      state,
+      { type: "HEARTBEAT", playerId: "guest" },
+      1_200,
+    );
+
+    expect(
+      reconnected.players.find((item) => item.id === "guest")?.active,
+    ).toBe(true);
+    expect(reconnected.version).toBe(state.version + 1);
+  });
 });
