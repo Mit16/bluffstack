@@ -56,7 +56,7 @@ Highest score after 5 rounds wins. Ties are shared.
 
 **Requirements:** Node.js 20+
 
-`ash
+```bash
 npm install
 
 # Run all tests
@@ -67,15 +67,15 @@ npm run dev
 
 # Production build + type-check
 npm run build
-`
+```
 
 Copy .env.example to .env and fill in your values:
 
-`
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SECRET_KEY=your-service-role-key
-PLAYER_TOKEN_SECRET=a-random-string-of-at-least-32-chars
-`
+```
+SUPABASE_URL=https://your-project.supabase.co 
+SUPABASE_SECRET_KEY=your-service-role-key 
+PLAYER_TOKEN_SECRET=a-random-string-of-at-least-32-chars 
+```
 
 The service role key is server-only. It is never sent to the browser.
 
