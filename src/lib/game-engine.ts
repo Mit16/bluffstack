@@ -685,6 +685,15 @@ export function applyAction(
         } else {
           throw new GameRuleError("The VOTE phase is not ready to advance.");
         }
+      } else if (state.phase === "REVEAL") {
+        // Host manually advances past the reveal screen.
+        if (state.roundNumber >= MAX_ROUNDS) {
+          state.phase = "FINISHED";
+          state.phaseDeadline = null;
+          state.currentRound = null;
+        } else {
+          beginRound(state, state.roundNumber + 1, now);
+        }
       } else {
         throw new GameRuleError("This phase cannot be advanced manually.");
       }

@@ -1,33 +1,42 @@
 # Bluffstack
 
-A Balderdash-style bluffing game for developers. Players compete to write
-convincing fake definitions for real, obscure tech terms. Join any game with
-a 4-letter room code. No account needed.
+A Balderdash-style bluffing game for developers. Players compete to write convincing fake definitions for real, obscure tech terms. Join any game with a 4-letter room code — no account needed.
 
 ---
 
 ## How to play
 
 1. One player creates a room and shares the 4-letter code.
-2. Up to 8 players join in the lobby.
+2. Up to 7 more players join in the lobby.
 3. The host starts the game.
 
-Each round:
+Each of 5 rounds:
 
-- **WRITE (45 s):** An obscure real tech term appears. Every player secretly
-  types a fake definition that sounds plausible.
-- **VOTE (30 s):** All fakes plus the real definition appear shuffled and
-  anonymous. Pick the one you think is real. You cannot vote for your own fake.
-- **REVEAL (10 s):** The real definition is highlighted. Scores update. Repeat
-  for 5 rounds.
+| Phase | What happens | Time |
+|---|---|---|
+| WRITE | An obscure real tech term appears. Every player secretly writes a fake definition. | 45 s |
+| VOTE | All fakes plus the real definition appear shuffled and anonymous. Pick the real one. | 30 s |
+| REVEAL | The real definition is highlighted. Scores update. Host advances to the next round. | 10 s |
 
 **Scoring**
 
-- Pick the real definition: +3 points
-- Someone votes for your fake: +2 points per vote
+- Pick the real definition: **+3 pts**
+- Someone votes for your fake: **+2 pts** per vote
 - Submit nothing: no penalty
 
-Highest score after 5 rounds wins. Ties are shared wins.
+Highest score after 5 rounds wins. Ties are shared.
+
+---
+
+## Engineering highlights
+
+| Concern | Solution |
+|---|---|
+| Server authority | Server owns clock, identity, phases, votes and scores. Client is a read-only view. |
+| Concurrency | Optimistic locking on a ersion column prevents two concurrent writes from overwriting each other. |
+| Lazy deadlines | No background scheduler. Phases advance when the next HTTP request arrives after a deadline. |
+| Per-player redaction | API returns a different response per player — authors hidden in VOTE, real definition hidden in WRITE. |
+| Presence detection | lastSeen updated on every poll. Players unseen for 15 s are marked inactive; host auto-transfers. |
 
 ---
 
@@ -36,57 +45,58 @@ Highest score after 5 rounds wins. Ties are shared wins.
 | Layer | Technology |
 |---|---|
 | Frontend | React 19, Vite 8, TypeScript 5 |
-| Backend | Netlify Functions (single function) |
+| Backend | Netlify Functions (single serverless function) |
 | Database | Supabase PostgreSQL |
 | Validation | Zod |
-| Tests | Vitest |
-
-The interesting engineering here is:
-
-- **Server-authoritative state machine** — the server owns identity, phases,
-  deadlines, votes and scores. The client is a thin view layer.
-- **Optimistic locking** — every write carries a version number. A stale write
-  is rejected and retried, preventing two players from overwriting each other.
-- **Lazy deadlines** — there is no background scheduler. Phases advance when
-  the next request arrives after a deadline expires.
-- **Per-player redaction** — the API returns a different response per player.
-  Authors are hidden during VOTE; the real definition is hidden during WRITE.
+| Tests | Vitest — 86 unit tests |
 
 ---
 
 ## Development
 
-Requirements: Node.js 20+, npm
+**Requirements:** Node.js 20+
 
-`
+`ash
 npm install
-npm test       # 27 unit tests
-npm run dev    # local dev server at http://localhost:5173
-npm run build  # type-check + production bundle
+
+# Run all tests
+npm test
+
+# Local dev server (requires Netlify CLI for functions)
+npm run dev
+
+# Production build + type-check
+npm run build
 `
 
-Environment variables (copy .env.example to .env):
+Copy .env.example to .env and fill in your values:
 
 `
-SUPABASE_URL=...
-SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SECRET_KEY=your-service-role-key
+PLAYER_TOKEN_SECRET=a-random-string-of-at-least-32-chars
 `
 
-The service role key is server-only. It must never appear in the browser bundle.
+The service role key is server-only. It is never sent to the browser.
+
+---
+
+## Deployment (Netlify)
+
+1. Push this repo to GitHub.
+2. Connect the repo in the Netlify dashboard.
+3. Set the three environment variables above in **Site settings > Environment variables**.
+4. Deploy. Netlify reads 
+etlify.toml for build command and function directory automatically.
 
 ---
 
 ## Documentation
 
-- docs/current-state.md — what is and is not implemented today
-- docs/architecture.md — full layer diagram and design notes
-- docs/roadmap.md — phased plan from engine to deploy
-- docs/decisions/ — architecture decision records
-
----
-
-## Project status
-
-Engine and player views are complete with 27 passing tests. The API layer,
-database schema, and UI are in progress. See docs/current-state.md for the
-current phase and known gaps.
+| File | Purpose |
+|---|---|
+| [docs/current-state.md](docs/current-state.md) | What is and is not implemented right now |
+| [docs/architecture.md](docs/architecture.md) | Layer diagram, state machine, privacy rules |
+| [docs/roadmap.md](docs/roadmap.md) | Phased plan from engine to deploy |
+| [docs/decisions/ADR-001-database.md](docs/decisions/ADR-001-database.md) | Why Supabase over Netlify Blobs |
+| [docs/decisions/ADR-002-game-state.md](docs/decisions/ADR-002-game-state.md) | Pure-function engine design |
