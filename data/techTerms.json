@@ -1,0 +1,152 @@
+[
+  {
+    "id": "merkle-tree",
+    "term": "Merkle Tree",
+    "definition": "A tree of cryptographic hashes in which each leaf is the hash of a data block and each parent is the hash of its children, enabling efficient and verifiable comparison of large datasets.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Merkle_tree"
+  },
+  {
+    "id": "bloom-filter",
+    "term": "Bloom Filter",
+    "definition": "A space-efficient probabilistic data structure that tests whether an element is possibly a member of a set, at the cost of a small chance of false positives.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Bloom_filter"
+  },
+  {
+    "id": "crdt",
+    "term": "CRDT",
+    "definition": "A data structure that can be replicated across multiple computers, where replicas can update independently and merge their conflicts automatically without central coordination.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type"
+  },
+  {
+    "id": "quine",
+    "term": "Quine",
+    "definition": "A program that produces its own complete source code as its only output, without reading its own file or relying on any other form of hidden input.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Quine_(computing)"
+  },
+  {
+    "id": "zip-bomb",
+    "term": "Zip Bomb",
+    "definition": "A malicious archive file deliberately crafted to decompress to an enormous size, intended to exhaust the disk space or memory of the system that opens it.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Zip_bomb"
+  },
+  {
+    "id": "happy-eyeballs",
+    "term": "Happy Eyeballs",
+    "definition": "An algorithm that attempts connections over both IPv4 and IPv6 in parallel, preferring whichever transport responds first in order to reduce user-visible latency.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Happy_Eyeballs"
+  },
+  {
+    "id": "thrashing",
+    "term": "Thrashing",
+    "definition": "A state in which a virtual memory system spends more time swapping pages between RAM and disk than executing actual work, causing a dramatic performance collapse.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Thrashing_(computer_science)"
+  },
+  {
+    "id": "buddy-allocation",
+    "term": "Buddy Memory Allocation",
+    "definition": "A memory allocation technique that splits blocks into two equal buddies and merges free buddies back together, trading some internal fragmentation for fast allocation and coalescing.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Buddy_memory_allocation"
+  },
+  {
+    "id": "copy-on-write",
+    "term": "Copy-on-Write",
+    "definition": "An optimization in which objects are duplicated only at the moment one of them is modified, allowing multiple consumers to safely share a single copy until a write occurs.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Copy-on-write"
+  },
+  {
+    "id": "loop-unrolling",
+    "term": "Loop Unrolling",
+    "definition": "A compiler optimization that replicates the body of a loop several times to reduce loop overhead and expose instruction-level parallelism, at the cost of larger code size.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Loop_unrolling"
+  },
+  {
+    "id": "shebang",
+    "term": "Shebang",
+    "definition": "The character sequence at the start of a script file that tells the operating system which interpreter program should be used to execute the rest of the file.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Shebang_(Unix)"
+  },
+  {
+    "id": "pointer-swizzling",
+    "term": "Pointer Swizzling",
+    "definition": "The process of converting references between pointer form and another representation such as offsets or handles, typically when loading serialized objects into memory.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Pointer_swizzling"
+  },
+  {
+    "id": "zombie-process",
+    "term": "Zombie Process",
+    "definition": "A process that has finished execution but still occupies an entry in the process table because its parent has not yet collected its exit status.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Zombie_process"
+  },
+  {
+    "id": "toctou",
+    "term": "Time-of-Check to Time-of-Use",
+    "definition": "A class of race condition in which a system's state changes between verifying a condition and acting on it, such as checking a file's permissions and then opening it.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Time-of-check_to_time-of-use"
+  },
+  {
+    "id": "slab-allocation",
+    "term": "Slab Allocation",
+    "definition": "A memory management scheme that pre-allocates pools of objects of the same type, so frequently created and destroyed objects can be reused without repeated initialization.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Slab_allocation"
+  },
+  {
+    "id": "zero-copy",
+    "term": "Zero-Copy",
+    "definition": "A technique in which data is moved between parts of a system without the CPU copying it, typically using kernel facilities, greatly reducing latency and processor load.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Zero-copy"
+  },
+  {
+    "id": "watchdog-timer",
+    "term": "Watchdog Timer",
+    "definition": "A hardware or software timer that resets a system if the running program fails to reset it periodically, used to recover devices from hangs and unresponsive states.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Watchdog_timer"
+  },
+  {
+    "id": "null-object-pattern",
+    "term": "Null Object Pattern",
+    "definition": "A design pattern in which an object implementing the expected interface but doing nothing is supplied instead of a null reference, letting callers skip explicit null checks.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Null_object_pattern"
+  },
+  {
+    "id": "ring-buffer",
+    "term": "Ring Buffer",
+    "definition": "A fixed-size circular data structure in which the end connects back to the beginning, allowing continuous writing and reading without shifting elements in memory.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Circular_buffer"
+  },
+  {
+    "id": "gray-code",
+    "term": "Gray Code",
+    "definition": "A binary numeral system in which two successive values differ by only one bit, which prevents spurious intermediate readings when values transition between states.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Gray_code"
+  },
+  {
+    "id": "exponential-backoff",
+    "term": "Exponential Backoff",
+    "definition": "A retry strategy that increases the waiting time between successive failed attempts, usually doubling it, to avoid overwhelming an already struggling system.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Exponential_backoff"
+  },
+  {
+    "id": "dining-philosophers",
+    "term": "Dining Philosophers Problem",
+    "definition": "A classic synchronization thought experiment in which philosophers sharing a limited number of forks must schedule their meals in a way that avoids deadlock and starvation.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Dining_philosophers_problem"
+  },
+  {
+    "id": "b-tree",
+    "term": "B-Tree",
+    "definition": "A self-balancing search tree that keeps data sorted and allows searches, insertions, and deletions in logarithmic time by storing multiple keys in each node.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/B-tree"
+  },
+  {
+    "id": "green-thread",
+    "term": "Green Thread",
+    "definition": "A thread that is scheduled by a runtime library or virtual machine rather than by the operating system's own native scheduler.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Green_threads"
+  },
+  {
+    "id": "sentinel-value",
+    "term": "Sentinel Value",
+    "definition": "A special value in a data stream or variable that signals the end of data or an exceptional condition, chosen so it can never be confused with legitimate data.",
+    "sourceUrl": "https://en.wikipedia.org/wiki/Sentinel_value"
+  }
+]

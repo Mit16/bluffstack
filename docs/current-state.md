@@ -1,154 +1,254 @@
 # Bluffstack - Current State
 
-_Last updated: 2026-10-28 - Commit: 4905d70_
+_Last updated: 2026-10-29_
 
 ---
 
 ## Phase summary
 
-| Phase                                     | Status      |
-| ----------------------------------------- | ----------- |
-| 1 - Project setup                         | Complete    |
-| 2 - Pure game engine                      | Complete    |
-| 3A - Submission integrity                 | Complete    |
-| 3B - Fake-answer similarity (inter-fake)  | Complete    |
-| 3C - Voting-option shuffle                | Next        |
-| 3D - Lifecycle and deadline edge cases    | Pending     |
-| 3E - Final engine verification            | Pending     |
-| 4 - Supabase schema and persistence layer | Not started |
-| 5 - Netlify Function API                  | Not started |
-| 6 - React UI                              | Not started |
-| 7 - Deploy and playtest                   | Not started |
+| Phase | Status |
+| --- | --- |
+| 1 - Project setup | Complete |
+| 2 - Pure game engine | Complete |
+| 3 - Engine hardening and security invariants | Complete |
+| 4 - Supabase schema and persistence layer | Implemented; migration applied to hosted database |
+| 5 - Netlify Function API | Implemented locally; integration verification pending |
+| 6 - React multiplayer UI | Pending |
+| 7 - Deployment and playtesting | Pending |
+
+**Current milestone:** Connect the server-authoritative game engine to persistent storage through the Netlify Function API, then verify the integration before starting the multiplayer UI.
+
+## Implemented architecture
+
+- **Frontend:** React, Vite, TypeScript.
+- **Backend:** Netlify Functions.
+- **Database:** Supabase PostgreSQL.
+- **Validation:** Zod.
+- **Testing:** Vitest.
+- **Authentication:** Signed player tokens using HMAC-SHA-256.
+- **Game logic:** Pure TypeScript state machine.
+- **Vote-option ordering:** Server-side cryptographically secure Fisher-Yates shuffle.
+- **Client synchronization:** Planned polling every two seconds with server-time offset handling.
+
+The game engine remains independent of database and HTTP concerns. Production API mutations use the persistence layer rather than relying on an in-memory room store.
 
 ---
 
-### Phase 3C: Voting-option ordering
+## Game rules and engine
 
-**Status:** Engine implementation and unit tests complete. Production integration pending.
+Primary implementation: `src/lib/game-engine.ts`
 
-- Added injectable vote-option ordering to the game engine.
-- Added tests for ordering during normal submission, deadline expiry, player departure, and player timeout.
-- Added a server-side secure Fisher-Yates shuffle utility using Web Crypto.
-- Verified that the shuffle preserves all options and does not mutate the input array.
-- Full test suite: 41 tests passing across 8 test files.
-- Production build: passing.
-- `git diff --check`: passing.
+The engine owns game state transitions and scoring. The server must never trust client-provided scores, deadlines, roles, or phase transitions.
 
-**Remaining work:** Ensure the Netlify API passes the secure ordering function to every relevant engine transition when the API is implemented. The utility's existence alone does not establish production integration.
+### Game rules
 
-**Next:** Phase 3D, lifecycle and deadline edge cases.
+- Room size: 2-8 players.
+- Game length: 5 rounds.
+- WRITE phase: 45 seconds.
+- VOTE phase: 30 seconds.
+- REVEAL phase: 10 seconds.
+- Correct vote for the real definition: +3 points.
+- Each vote received by a player's fake definition: +2 points.
+- No submission: no penalty.
+- Tied highest scores share the win.
+- Only the host can start a game or initiate another game after completion.
+- New players may join only during LOBBY or FINISHED.
+- The host is selected from eligible active players when succession is required.
 
----
+### Engine safeguards
 
-## What is implemented
+- Fake submissions must contain 20-500 characters.
+- Duplicate and near-identical fake submissions are rejected.
+- Similarity checks cover the real definition and other submitted fakes.
+- Voting rejects duplicate votes and votes for a player's own fake.
+- Deadlines are advanced lazily when requests arrive.
+- Phase transitions are bounded to avoid unbounded deadline-processing loops.
+- Inactive players are detected when their last-seen time is more than 15 seconds old.
+- Host succession and player reconnection are covered by tests.
+- Routine heartbeats avoid unnecessary public-version increments.
+- Secure vote-option ordering is injectable into the engine and supplied by the API when relevant transitions generate options.
 
-### Game engine (src/lib/game-engine.ts)
+### Player-specific views
 
-The authoritative, pure TypeScript state machine. All mutations go through
-applyAction(state, action, now) => GameState. The original state is never
-mutated; a deep clone is returned on every successful action.
+Primary implementation: `src/lib/game-view.ts`
 
-**Implemented actions**
+The API returns a player's authorized view rather than exposing raw internal game state.
 
-| Action      | Behaviour                                                                                                                                        |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| JOIN        | Allowed in LOBBY or FINISHED only. Resets scores when joining a finished room.                                                                   |
-| HEARTBEAT   | Updates player.lastSeen; used to detect inactive players.                                                                                        |
-| LEAVE       | Marks player inactive; triggers early-advance if applicable.                                                                                     |
-| START_GAME  | Host only; requires 2+ active players; begins round 1.                                                                                           |
-| SUBMIT_FAKE | WRITE phase only; validates length 20-500 chars and similarity against real definition; advances to VOTE when all active players have submitted. |
-| SUBMIT_VOTE | VOTE phase only; rejects self-votes and duplicates; advances to REVEAL when all active players have voted.                                       |
-| ADVANCE     | Manual phase advance; also fires lazily when advanceDeadline is called on any request after a deadline expires.                                  |
-| PLAY_AGAIN  | FINISHED phase only; host resets scores and starts round 1 with same players.                                                                    |
+| Phase | Visibility |
+| --- | --- |
+| LOBBY | Room metadata and player list |
+| WRITE | Current term and the viewer's own submission; no real definition or other submissions |
+| VOTE | Option IDs and text; no authors, real/fake flags, or other players' votes |
+| REVEAL | Revealed options, authors, real/fake status, votes, definition, and source |
+| FINISHED | Final room and leaderboard information |
 
-**Phase timers**
-
-- WRITE deadline: now + 45 000 ms
-- VOTE deadline: now + 30 000 ms
-- REVEAL deadline: now + 10 000 ms
-- All deadlines are stored as absolute epoch timestamps in state.phaseDeadline.
-- advanceDeadline() is called inside applyAction and advanceGameState; bounded to MAX_ROUNDS x 3 + 3 iterations to handle requests arriving after multiple missed deadlines.
-
-**Presence detection**
-
-advanceGameState(state, now) marks any player whose lastSeen is more than 15 000 ms in the past as inactive. Host succession runs immediately after.
-
-**Scoring** (applied once in enterReveal, guarded by round.scored)
-
-- Correct vote (real definition): +3
-- Vote received on your fake: +2 per vote
-- Submitting nothing: no penalty
-
-**Tie handling**
-
-getWinners() returns every player whose score equals the highest score.
-
-**Known gaps to be fixed in Phase 3**
-
-- A player can re-submit a fake and silently overwrite their earlier entry.
-- Fakes are only compared against the real definition; two players can submit identical fakes to each other.
-- stableOrder() uses a deterministic hash, not a true random shuffle. The shuffle must be generated server-side and stored once.
-- If all players become inactive, electHost leaves the previous host ID in place with no active player attached.
+Option ordering is generated and stored server-side so all players see consistent options.
 
 ---
 
-### Player-specific views (src/lib/game-view.ts)
+## Supabase persistence
 
-getPlayerGameView(state, playerId) => PlayerGameView
+Relevant files:
 
-| Phase             | What the viewer receives                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------------------------- |
-| LOBBY or FINISHED | Room metadata and player list; no round data.                                                                 |
-| WRITE             | Current term name and the viewer own submission if any; no real definition, no other submissions, no options. |
-| VOTE              | Shuffled options with id and text only; no authorPlayerId, no isReal; no other players votes.                 |
-| REVEAL            | Full options with authors and isReal; real definition; all votes; source URL.                                 |
+- `supabase/migrations/20261028000000_create_game_rooms.sql`
+- `netlify/functions/_shared/database.types.ts`
+- `netlify/functions/_shared/supabase.ts`
+- `netlify/functions/_shared/room-store.ts`
 
-History contains only rounds that have been fully scored. The full internal GameState is never returned to a client.
+### Implemented
 
----
+- PostgreSQL `public.game_rooms` table with room code, JSONB game state, revision, and timestamps.
+- Row-level security enabled.
+- Database RPC `create_game_room` for room creation.
+- Database RPC `save_game_room_state` for revision-checked state updates.
+- Optimistic concurrency handling to prevent silently overwriting a newer room state.
+- Server-side Supabase client configuration.
+- State validation when loading persisted rooms.
+- Explicit handling for room collisions, missing rooms, and save conflicts.
 
-### Tests (tests/unit/)
+### Hosted database status
 
-27 tests across 7 files, all passing.
+The migration was applied to the linked Supabase project. The migration list was checked, and the table, both RPCs, RLS status, and intended role permissions were verified through read-only SQL checks.
 
-| File                           | Tests | Coverage area                                                                                                 |
-| ------------------------------ | ----- | ------------------------------------------------------------------------------------------------------------- |
-| setup.test.ts                  | 1     | Vitest is wired up.                                                                                           |
-| game-engine.test.ts            | 7     | Lobby, WRITE to VOTE early advance, self-vote rejection, scoring, duplicate votes, deadline expiry, tie wins. |
-| game-engine-edge-cases.test.ts | 4     | Phase enforcement, 8-player cap, non-host start rejection, PLAY_AGAIN reset.                                  |
-| game-view.test.ts              | 5     | LOBBY/WRITE/VOTE/REVEAL redaction, stranger rejection.                                                        |
-| player-activity.test.ts        | 4     | lastSeen expiry, host succession, early-advance on last voter leaving, all-inactive fallback.                 |
-| deadline-transition.test.ts    | 3     | WRITE to VOTE to REVEAL to next-round cascade, REVEAL to FINISHED after round 5.                              |
-| deadline-action.test.ts        | 3     | Heartbeat advances an expired deadline, ADVANCE action semantics.                                             |
+The intended database access path is through the server-side Supabase client using the secret key. Database credentials must never be exposed to the browser.
 
----
-
-### Project scaffold
-
-| Area                                              | Status                                     |
-| ------------------------------------------------- | ------------------------------------------ |
-| Vite + React + TypeScript app shell               | Placeholder App.tsx and styles.css present |
-| Netlify function stub (netlify/functions/game.ts) | Empty, not implemented                     |
-| Supabase client (src/lib/api.ts)                  | Empty, not implemented                     |
-| React pages and components                        | Not started                                |
-| Content (data/ terms JSON)                        | Not confirmed                              |
+**Verification boundary:** Schema and permission checks have been performed against the hosted database. This does not yet establish that complete concurrent multiplayer requests work end-to-end through a deployed Netlify Function.
 
 ---
 
-## Storage
+## Netlify Function API
 
-No persistence layer exists yet. The engine operates on in-memory GameState objects passed directly in tests. The production plan is Supabase PostgreSQL with optimistic-locking on a version column, see ADR-001.
+Primary entry point: `netlify/functions/game.ts`
 
-Running environment: All tests use pure in-memory state. There is no database connection at this time.
+Shared implementation:
+
+- `netlify/functions/_shared/game-api.ts`
+- `netlify/functions/_shared/player-token.ts`
+- `netlify/functions/_shared/secure-shuffle.ts`
+- `netlify/functions/_shared/room-store.ts`
+- `netlify/functions/_shared/supabase.ts`
+
+### Implemented
+
+- Request validation and HTTP method enforcement.
+- Room creation and joining.
+- Signed player-token creation and verification.
+- Player identity verification for game actions and reconnections.
+- Server-authoritative game mutations.
+- Lazy deadline advancement.
+- Player-specific response redaction.
+- Secure vote-option ordering.
+- Persistence through Supabase RPCs.
+- Optimistic revision handling.
+- Routine heartbeat write throttling.
+- Error handling for invalid requests, game-rule violations, missing rooms, and unexpected failures.
+- A bounded retry for room-code collisions.
+
+Player tokens use HMAC-SHA-256 and expire after 30 days. The signing secret must contain at least 32 characters.
+
+### API verification status
+
+Unit tests cover room creation, joining, tokens, game actions, validation, and relevant failure cases.
+
+The current test suite passes locally. The API has not yet been fully verified through a deployed Netlify endpoint against the hosted Supabase database.
 
 ---
+
+## Tech-term catalog
+
+File: `data/techTerms.json`
+
+- Contains 25 tech terms.
+- Entries include IDs, term names, definitions, and HTTPS source URLs.
+- Unit tests check the catalog structure, required fields, and uniqueness constraints.
+
+These tests establish structural validity. They do not independently establish the factual accuracy or quality of every definition and source.
+
+---
+
+## Frontend status
+
+The React/Vite application shell is present.
+
+The home screen remains a placeholder. The full multiplayer experience is not yet connected to the API.
+
+Remaining frontend work includes:
+
+- Create-room and join-room flows.
+- Player identity and token persistence on the client.
+- Lobby and host controls.
+- WRITE, VOTE, and REVEAL screens.
+- Polling and server-adjusted countdowns.
+- Results and leaderboard screens.
+- Loading, reconnection, and error states.
+- End-to-end multiplayer verification.
+
+The browser must never receive the Supabase secret key or the internal, unredacted game state.
+
+---
+
+## Tests and build
+
+Latest verified local result: **75 tests passing across 11 test files.**
+
+| Verification | Result |
+| --- | --- |
+| `npm test` | 75 passed, 11 files passed |
+| `npm run build` | Passed; TypeScript check and Vite production build succeeded |
+| `git diff --check` | No whitespace errors; LF-to-CRLF warnings remain for `.env.example` and `.gitignore` |
+
+The invalid-secret API test intentionally exercises an error path, which produces expected stderr output while the test passes.
+
+Tests run locally do not replace integration tests against the hosted database or deployed function.
+
+---
+
+## Environment configuration
+
+Local environment variables belong in the ignored `.env` file. Use `.env.example` as the template.
+
+Required server-side variables:
+
+- `SUPABASE_URL`
+- `SUPABASE_SECRET_KEY`
+- `PLAYER_TOKEN_SECRET`
+
+Configure the same variables in Netlify's environment settings before deploying the API.
+
+Never commit `.env`, paste secret values into issue reports, or expose the Supabase secret key in frontend code.
+
+The Supabase CLI is linked to the hosted project. Running `supabase status` for local services may require Docker or Podman; hosted database migrations do not require running a local Supabase stack.
+
+---
+
+## Next steps
+
+1. Review the pending API, persistence, migration, catalog, and test changes.
+2. Verify the rejected-join error path and the full local test/build results.
+3. Confirm the documentation matches the implementation.
+4. Stage and inspect a focused API milestone commit.
+5. Configure the server-side environment and perform a controlled API integration test against hosted Supabase.
+6. Build the React multiplayer UI against the verified API.
+7. Deploy and playtest with multiple players before creating a release tag.
 
 ## How to run
 
-Install dependencies: npm install
+Install dependencies:
 
-Run tests: npm test
+`npm install`
 
-Start local dev server: npm run dev
+Run unit tests:
 
-Production build (also runs tsc): npm run build
+`npm test`
+
+Start the frontend development server:
+
+`npm run dev`
+
+Run the production build and TypeScript check:
+
+`npm run build`
+
+Check whitespace and patch formatting:
+
+`git diff --check`
